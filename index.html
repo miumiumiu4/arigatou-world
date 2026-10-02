@@ -489,7 +489,7 @@ function drawWorld(){
   list.push({y:oy,fn:()=>drawPerson(ox*ts+ts/2-camX,(oy+1)*ts-ts*.08-camY,ts*.95,pdir,{hair:'#5a3a22',shirt:'#34c6a5',skin:'#f6d2ae',hat:'#ffffff'},walk,true)});
   drawOthers(list,camX,camY);
   list.sort((a,b)=>a.y-b.y);list.forEach(o=>o.fn());
-  if(online.myBubble>gt&&STAMPS[online.myS])bubble(ox*ts+ts/2-camX,(oy+1)*ts-ts*.08-camY-ts*1.55,STAMPS[online.myS]);
+  if(online.myBubble>gt&&STAMPS[online.myId])bubble(ox*ts+ts/2-camX,(oy+1)*ts-ts*.08-camY-ts*1.55,STAMPS[online.myId]);
   // "!" marks & talk bubbles for undefeated trainers / hakase
   for(const n of npcs()){if((n.trainer&&!n.defeated)||(n.id=='hakase'&&!flags.starter)){const bob=Math.sin(gt*4)*3;heart(n.x*ts+ts/2-camX,n.y*ts-ts*.28-camY+bob,ts*.13,n.trainer?'#ffb02e':'#ff4f7b');}}
   let near=null,nd=99;for(const n of npcs()){if(n.member){const d=Math.abs(n.x-px)+Math.abs(n.y-py);if(d<nd){nd=d;near=n;}}}
@@ -1138,11 +1138,16 @@ const FIREBASE_CONFIG={
   messagingSenderId:"331083638885",
   appId:"1:331083638885:web:405fb9811edd173c593e8c"
 };
-const STAMPS=[null,{t:'愛してるぜ',c:'#ff4f7b'},{t:'ありがとう',c:'#ffa81e'},{t:'笑笑笑',c:'#3a9be0'}];
+const STAMPS=[null,{t:'愛してるぜ',c:'#ff4f7b'},{t:'ありがとう',c:'#ffa81e'},{t:'笑笑笑',c:'#3a9be0'},
+ {t:'よろしく！',c:'#2e9e6b'},{t:'おつかれさま！',c:'#6a8fd8'},{t:'また遊ぼう！',c:'#e0802a'},
+ {t:'やったー！',c:'#e8478a'},{t:'すごい！！',c:'#c9a010'},{t:'えへへ',c:'#f08aa0'},
+ {t:'ナイス！',c:'#18a6b8'},{t:'ドンマイ！',c:'#7a8f3a'},{t:'ふぁいと！',c:'#d9442a'},{t:'ごめんね〜',c:'#8a7ad0'},
+ {t:'神！',c:'#d4a010'},{t:'乾杯🍻',c:'#c8801a'},{t:'おやすみ…',c:'#5b4a9a'}];
+const STAMP_CATS=[{n:'あいさつ',c:'#2e9e6b',ids:[4,2,5,6]},{n:'きもち',c:'#e8478a',ids:[1,7,8,9]},{n:'はげまし',c:'#18a6b8',ids:[10,11,12,13]},{n:'おもしろ',c:'#e0802a',ids:[3,14,15,16]}];
 const ADJ=['ほかほか','にこにこ','ぽかぽか','きらきら','ふわふわ','わくわく','ほんわか','ごきげん','ぴかぴか','のんびり','すくすく','ひょうきん'];
 const NOUN=['たいよう','おにぎり','まくら','おだんご','ひまわり','そよかぜ','ほしぞら','くじら','たんぽぽ','おひさま','ことり','わたあめ'];
 let onlineOn=true;try{onlineOn=localStorage.getItem('awOnline')!=='off';}catch(e){}
-const online={on:false,uid:null,db:null,map:null,ref:null,others:{},count:1,myS:0,myT:0,myBubble:0,lastSend:0,lastKey:'',coolUntil:0,nick:''};
+const online={myId:0,on:false,uid:null,db:null,map:null,ref:null,others:{},count:1,myS:0,myT:0,myBubble:0,lastSend:0,lastKey:'',coolUntil:0,nick:''};
 function myNick(){if(online.nick)return online.nick;let n=null;try{n=localStorage.getItem('awNick');}catch(e){}
   if(!n){n=ADJ[Math.floor(Math.random()*ADJ.length)]+' '+NOUN[Math.floor(Math.random()*NOUN.length)];try{localStorage.setItem('awNick',n);}catch(e){}}
   return online.nick=n;}
@@ -1176,7 +1181,7 @@ function netApply(val){
     if(first)e=o[id]={ox:v.x,oy:v.y,lastT:null,lastSt:v.st||0,bubble:0,until:0,seen:now,h:hashStr(id)};
     if(v.t!==e.lastT){e.lastT=v.t;e.seen=now;}
     e.n=v.n;e.m=v.m;e.x=v.x;e.y=v.y;e.d=v.d;
-    if(v.st&&v.st!==e.lastSt){e.lastSt=v.st;if(!first&&v.s>0&&v.s<=3){e.bubble=v.s;e.until=gt+4;if(Math.abs(v.x-px)+Math.abs(v.y-py)<=10)sThanks();}}}
+    if(v.st&&v.st!==e.lastSt){e.lastSt=v.st;const sid=v.st>1e14?v.st%100:(v.s||0);if(!first&&STAMPS[sid]){e.bubble=sid;e.until=gt+4;if(Math.abs(v.x-px)+Math.abs(v.y-py)<=10)sThanks();}}}
   online.count=1+Object.values(o).filter(e=>now-e.seen<30000).length;}
 function hashStr(s){let h=7;for(const c of s)h=(h*31+c.charCodeAt(0))>>>0;return h;}
 function netTick(){
@@ -1187,9 +1192,14 @@ function netTick(){
   try{online.db.ref('players/'+map+'/'+online.uid).set({n:myNick(),m:party[0]?party[0].id:0,x:px,y:py,d:pdir,t:firebase.database.ServerValue.TIMESTAMP,s:online.myS,st:online.myT});}catch(e){}}
 async function openStamp(){
   if(busy||!online.on)return;busy=true;
-  const c=await choose(STAMPS.slice(1).map(s=>s.t),{title:'スタンプを おくる',colors:STAMPS.slice(1).map(s=>s.c),cancel:-1,cancelLabel:'やめる'});
-  if(c>=0){if(Date.now()<online.coolUntil){await say('ちょっと まってね！\\nつづけて おくれないよ。');}
-    else{online.coolUntil=Date.now()+2500;online.myS=c+1;online.myT=Date.now();online.myBubble=gt+4;sThanks();online.lastKey='';netTick();}}
+  while(true){
+    const cat=await choose(STAMP_CATS.map(c=>c.n),{title:'スタンプを おくる',colors:STAMP_CATS.map(c=>c.c),cancel:-1,cancelLabel:'やめる'});
+    if(cat<0||cat===undefined)break;
+    const ids=STAMP_CATS[cat].ids;
+    const k=await choose(ids.map(i=>STAMPS[i].t),{title:STAMP_CATS[cat].n+'の スタンプ',colors:ids.map(i=>STAMPS[i].c),cancel:-1,cancelLabel:'もどる'});
+    if(k<0||k===undefined)continue;
+    if(Date.now()<online.coolUntil){await say('ちょっと まってね！\nつづけて おくれないよ。');break;}
+    const id=ids[k];online.coolUntil=Date.now()+2500;online.myId=id;online.myS=id<=3?id:0;online.myT=Date.now()*100+id;online.myBubble=gt+4;sThanks();online.lastKey='';netTick();break;}
   busy=false;}
 function drawOthers(list,camX,camY){
   if(!online.on||mode!=='world')return;const now=performance.now();
