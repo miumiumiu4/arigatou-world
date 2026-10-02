@@ -329,7 +329,7 @@ function pressA(){beepInit();if(choice){choiceDone(choice.sel);return;}
   if(aRes){const r=aRes;aRes=null;r();return;}
   if(mode=='world'&&!busy)interact();
   else if(mode=='title')titleGo();}
-function pressB(){beepInit();if(choice&&choice.cancel!==undefined){choiceDone(choice.cancel);return;}if(mode=='world'&&!busy)openMenu();}
+function pressB(){beepInit();if(online.waiting){online.cancel=true;return;}if(choice&&choice.cancel!==undefined){choiceDone(choice.cancel);return;}if(mode=='world'&&!busy)openMenu();}
 function beepInit(){try{netStart();AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state=='suspended')AC.resume();initMusic();}catch(e){}}
 cv.addEventListener('pointerdown',e=>{beepInit();const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   if(mode=='race'&&R){raceDown(e);return;}
@@ -494,6 +494,7 @@ function drawWorld(){
   for(const n of npcs()){if((n.trainer&&!n.defeated)||(n.id=='hakase'&&!flags.starter)){const bob=Math.sin(gt*4)*3;heart(n.x*ts+ts/2-camX,n.y*ts-ts*.28-camY+bob,ts*.13,n.trainer?'#ffb02e':'#ff4f7b');}}
   let near=null,nd=99;for(const n of npcs()){if(n.member){const d=Math.abs(n.x-px)+Math.abs(n.y-py);if(d<nd){nd=d;near=n;}}}
   for(const n of (near&&nd<=3?[near]:[])){{ctx.font=`bold 13px ${FONT}`;const tw=Math.min(ctx.measureText(n.name).width+18,W-20),lx=clamp(n.x*ts+ts/2-camX,tw/2+6,W-tw/2-6),ly=n.y*ts-ts*.45-camY;rr(lx-tw/2,ly-13,tw,26,13,'rgba(30,40,35,.85)','#ffd0dc',2);TF(n.name,lx,ly,13,'#fff','center',tw-12);}}
+  if(online.on&&!busy&&!choice&&!box){const ff=facing(),pp=playerAtTile(ff.x,ff.y);if(pp){rr(W/2-140,H-60,280,36,18,'rgba(255,79,123,.92)','#fff',2);TF('Aボタンで '+(pp.n||'ともだち')+' を さそう',W/2,H-42,14,'#fff','center',260);}}
   // map name
   if(toast&&toast.life>0){ctx.globalAlpha=Math.min(1,toast.life*2);rr(W/2-120,62,240,38,12,'rgba(30,40,35,.8)');TF(toast.t,W/2,82,17,'#fff','center',216);ctx.globalAlpha=1;}
   // menu button & counters
@@ -524,7 +525,9 @@ async function warpTo(w){
   busy=false;save();
 }
 function facing(){return{x:px+(pdir=='left'?-1:pdir=='right'?1:0),y:py+(pdir=='up'?-1:pdir=='down'?1:0)};}
-async function interact(){const f=facing(),n=npcAt(f.x,f.y);if(!n)return;busy=true;
+async function interact(){const f=facing(),n=npcAt(f.x,f.y);
+  if(!n){const pl=online.on?playerAtTile(f.x,f.y):null;if(pl){busy=true;await friendMenu(pl);busy=false;}return;}
+  busy=true;
   n.dir=({up:'down',down:'up',left:'right',right:'left'})[pdir];
   await talk(n);busy=false;save();}
 async function giveThanks(n){if(n.thanks&&!n.talked){n.talked=true;thanks++;sThanks();pop('ありがとう +1',W/2,H/2-40);await sleep(600);}}
@@ -744,11 +747,11 @@ function sparkle(fromE,toE,type){ // particles flying from attacker to defender
 function updateParts(dt){if(!B)return;for(const q of B.parts){if(q.delay>0){q.delay-=dt;q.hidden=true;continue;}q.hidden=false;q.life-=dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=60*dt;}B.parts=B.parts.filter(q=>q.life>0);B.parts.forEach(q=>{if(q.hidden)q.life=Math.max(q.life,.01)});if(B.shake>0)B.shake-=dt;}
 function newB(){return{p:null,e:null,pHP:0,eHP:0,pOff:0,eOff:0,parts:[],shake:0,hurtP:0,hurtE:0,pGone:false,eGone:false,night:false};}
 const nm=(m,foe)=>(foe?'あいての ':'')+SP[m.id].n;
-async function playMove(att,def,mv,attIsPlayer){
+async function playMove(att,def,mv,attIsPlayer,rng){
   const [t,pw]=MOVES[mv];
   await say(`${nm(att,!attIsPlayer)}の\n「${mv}」！`);
   const eff=mult(t,SP[def.id].t),lv=att.lv;
-  let dmg=Math.floor(((2*lv/5+2)*pw*(att.atk/def.def)/50+2)*eff*rnd(.85,1)*(SP[att.id].t===t?1.2:1));dmg=Math.max(1,dmg);
+  let dmg=Math.floor(((2*lv/5+2)*pw*(att.atk/def.def)/50+2)*eff*(.85+(rng?rng():Math.random())*.15)*(SP[att.id].t===t?1.2:1));dmg=Math.max(1,dmg);
   [sHit,sLove,sThanks][t]();
   sparkle(!attIsPlayer,attIsPlayer,t);
   // attacker hops
@@ -974,10 +977,11 @@ function buildTrack(c,seed){const segs=[],r=seeded(seed);
     else if(roll<.66)segs[k].sp.push({k:'box',x,t:-1});
     else if(roll<.66+(c.obs||.2)){segs[k].sp.push({k:'cloud',x,t:-1});if(r()<.5)segs[k].sp.push({k:'cloud',x:clamp(x+.5,-.9,.9),t:-1});}}
   return segs;}
-function raceInit(cid){const c=KC[cid],seed=c.seed,segs=buildTrack(c,seed),N=segs.length;
+function raceInit(cid,net){const c=KC[cid],seed=c.seed,segs=buildTrack(c,seed),N=segs.length;
   const names=MEMBERS.map(m=>m[0]);const pick=[];while(pick.length<5){const k=Math.floor(Math.random()*MEMBERS.length);if(!pick.includes(k))pick.push(k);}
   const rivals=pick.map((k,i)=>({name:names[k],mon:MEMBERS[k][3][0],x:-.7+i*.35,tx:-.7+i*.35,z:PZ+260*(i+1),sp:0,sp0:(.84+Math.random()*.12)*(c.rk||1),col:['#ff7a7a','#7ab0ff','#ffd35a','#9a7aff','#5ed1a8'][i],ct:Math.random()*2,hit:0}));
-  R={c,cid,segs,N,len:N*SEG,pos:0,x:0,speed:0,maxSp:7600,t:0,cd:3.4,state:'count',touch:{},hearts:0,boost:0,shake:0,rivals,rank:6,pops:[],bg:0,mon:party[0]?party[0].id:0,bumpCd:0,resT:0,reward:null,done:null,lap:0};}
+  R={c,cid,segs,N,len:N*SEG,pos:0,x:0,speed:0,maxSp:7600,t:0,cd:3.4,state:'count',touch:{},hearts:0,boost:0,shake:0,rivals,rank:6,pops:[],bg:0,mon:party[0]?party[0].id:0,bumpCd:0,resT:0,reward:null,done:null,lap:0};
+  if(net){R.net=net;R.rivals.pop();const sx=net.role=='a'?.35:-.35;R.rivals.push({friend:1,name:net.name,mon:0,x:sx,tx:0,z:PZ,sp:0,sp0:1,col:'#ff4f7b',ct:0,hit:0,zt:PZ,xt:sx,st:0,ut:performance.now(),f:0});R.x=net.role=='a'?-.35:.35;R.cd=Math.max(.4,(net.go-serverNow())/1000);}}
 function raceDown(e){const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   if(R.state=='result'){const b=R.btn;if(b&&x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h&&R.done){const d=R.done;R.done=null;d();}return;}
   R.touch[e.pointerId]=x<W/2?-1:1;}
@@ -985,6 +989,7 @@ function raceMove(e){if(R&&R.touch[e.pointerId]!==undefined){const r=cv.getBound
 function raceUp(e){if(R)delete R.touch[e.pointerId];}
 function racePop(t,col){R.pops.push({t,c:col||'#fff',life:1.2});}
 function raceUpdate(dt){const q=R;q.t+=dt;q.pops.forEach(p=>p.life-=dt);q.pops=q.pops.filter(p=>p.life>0);q.shake=Math.max(0,q.shake-dt*2);q.bumpCd-=dt;
+  if(q.net&&online.on){q.netT=(q.netT||0)-dt;if(q.netT<=0){q.netT=.12;q.netN=(q.netN||0)+1;const fin0=q.state=='done'||q.state=='result';try{online.db.ref('races/'+q.net.id+'/'+online.uid).set({z:Math.round(q.pos+PZ),x:+q.x.toFixed(3),s:Math.round(q.speed),n:q.netN,m:q.mon,f:fin0?1:0});}catch(e){}}}
   if(q.state=='count'){q.cd-=dt;if(q.cd<=0){q.state='go';q.pops.push({t:'GO！',c:'#ffd23f',life:1.1,big:1});beep(1047,.3,'square',.08);}else{const n=Math.ceil(q.cd);if(q.lastN!==n){q.lastN=n;if(n<=3)beep(660,.12,'square',.07);}return;}}
   const fin=q.state=='done'||q.state=='result';
   const L=keys.ArrowLeft||keys.KeyA,Rt=keys.ArrowRight||keys.KeyD;let st=(Rt?1:0)-(L?1:0);for(const id in q.touch)st+=q.touch[id];st=clamp(st,-1,1);
@@ -998,18 +1003,18 @@ function raceUpdate(dt){const q=R;q.t+=dt;q.pops.forEach(p=>p.life-=dt);q.pops=q
       if(it.k=='heart'){q.hearts++;beep(1250+Math.random()*200,.06,'sine',.06);}
       else if(it.k=='box'){q.boost=1.8;racePop('ありがとうブースト！','#ffe27a');sLove();}
       else{q.speed*=.45;q.shake=.5;racePop('ぷんぷん くも！','#cfc');sndHitK();}}}}
-  const pz=q.pos+PZ;for(const r of q.rivals){r.ct-=dt;if(r.ct<=0){r.ct=1.5+Math.random()*2;r.tx=clamp((Math.random()-.5)*1.7,-.85,.85);}
-    r.x+=clamp(r.tx-r.x,-.8*dt,.8*dt);const d=r.z-pz;let k=r.sp0;if(d>3800)k*=.9;else if(d<-2600)k*=1.12;if(q.state=='count')k=0;
-    r.sp+=((q.maxSp*k)-r.sp)*Math.min(1,dt*2);r.z+=r.sp*dt;
-    if(!fin&&q.bumpCd<=0&&Math.abs(d)<300&&Math.abs(r.x-q.x)<.34){q.bumpCd=1;const dir=q.x>=r.x?1:-1;if(d>0){q.speed=Math.min(q.speed,r.sp*.82);}else r.sp*=.8;q.x+=dir*.18;r.x-=dir*.18;q.shake=.4;racePop('ごっつん！','#fdd');sndHitK();}}
+  const pz=q.pos+PZ;for(const r of q.rivals){if(!r.friend)r.ct-=dt;if(!r.friend&&r.ct<=0){r.ct=1.5+Math.random()*2;r.tx=clamp((Math.random()-.5)*1.7,-.85,.85);}
+    if(r.friend){const age=(performance.now()-r.ut)/1000;r.z+=(r.zt+r.st*Math.min(age,1.5)-r.z)*Math.min(1,dt*6);r.sp=r.st;r.x+=(r.xt-r.x)*Math.min(1,dt*8);}else r.x+=clamp(r.tx-r.x,-.8*dt,.8*dt);const d=r.z-pz;let k=r.sp0;if(d>3800)k*=.9;else if(d<-2600)k*=1.12;if(q.state=='count')k=0;
+    if(!r.friend){r.sp+=((q.maxSp*k)-r.sp)*Math.min(1,dt*2);r.z+=r.sp*dt;}
+    if(!fin&&q.bumpCd<=0&&Math.abs(d)<300&&Math.abs(r.x-q.x)<.34){q.bumpCd=1;const dir=q.x>=r.x?1:-1;if(d>0){q.speed=Math.min(q.speed,r.sp*.82);}else if(!r.friend)r.sp*=.8;q.x+=dir*.18;if(!r.friend)r.x-=dir*.18;q.shake=.4;racePop('ごっつん！','#fdd');sndHitK();}}
   if(!fin)q.rank=1+q.rivals.filter(r=>r.z>pz).length;
   if(!fin&&pz>=LAPS*q.len){q.state='done';q.resT=0;q.pops.push({t:'ゴール！',c:'#ffd23f',life:2,big:1});sLevel();raceFinish();}
   if(q.state=='done'){q.resT+=dt;if(q.resT>2)q.state='result';}
 }
 function sndHitK(){beep(150,.18,'sawtooth',.08);}
-function raceFinish(){const q=R;const rank=q.rank,got=Math.max(1,7-rank)+Math.min(8,Math.floor(q.hearts/8));thanks+=got;let extra='';
+function raceFinish(){const q=R;const rank=q.rank;const fr=q.rivals.find(r=>r.friend);let fx='',bonus=0;if(fr){const pz=q.pos+PZ,won=!(fr.f||fr.z>pz);bonus=won?3:0;if(won)flags.raceWins=(flags.raceWins||0)+1;fx=won?`${q.net.name}に かった！ ボーナス +3`:`${q.net.name}に まけた… また ちょうせん！`;}const got=Math.max(1,7-rank)+Math.min(8,Math.floor(q.hearts/8))+bonus;thanks+=got;let extra='';
   flags.kartMedals=flags.kartMedals||[];if(rank<=3&&!flags.kartMedals.includes(q.cid)){flags.kartMedals.push(q.cid);const o=flags.kartWin?1:2;flags.kartWin=true;onigiri+=o;extra=`${q.c.name}で ひょうしょう台！ おにぎり ×${o} ゲット！（${flags.kartMedals.length}/${KORDER.length}）`;}
-  q.reward={rank,got,extra};save();}
+  q.reward={rank,got,extra:fx?fx+(extra?'  '+extra:''):extra};save();}
 function wr(v,max){return ((v%max)+max)%max;}
 function drawRace(){
   const q=R,th=q.c.theme,hy=H*.42,K=H*.62,T0=TH[th],night=!!T0.stars;
@@ -1113,9 +1118,13 @@ function drawKart(id,cx,cy,s,t,col,back){
   for(const k of[-1,1])rr(k*s*.5-s*.09,-s*.12,s*.18,s*.18,s*.05,'#2a2a38','#555',1);
   ctx.restore();
 }
-async function startKart(cid){busy=true;for(let i=0;i<=10;i++){fade=i/10;await sleep(18);}
-  raceInit(cid);mode='race';const done=new Promise(res=>{R.done=res});for(let i=10;i>=0;i--){fade=i/10;await sleep(18);}
-  await done;for(let i=0;i<=10;i++){fade=i/10;await sleep(18);}R=null;mode='world';mapToast(MAPS[map].name);for(let i=10;i>=0;i--){fade=i/10;await sleep(18);}busy=false;save();}
+function raceNetStart(net){try{const ref=online.db.ref('races/'+net.id);net.ref=ref;
+  ref.on('value',snap=>{if(!R)return;const v=(snap.val()||{})[net.opp];const f=R.rivals.find(r=>r.friend);if(v&&f){f.zt=v.z;f.xt=v.x;f.st=v.s;f.ut=performance.now();if(v.m!==undefined)f.mon=v.m;f.f=v.f||0;}});
+  online.db.ref('races/'+net.id+'/'+online.uid).onDisconnect().remove();}catch(e){}}
+function raceNetStop(net){try{net.ref&&net.ref.off();online.db.ref('races/'+net.id+'/'+online.uid).remove();if(net.role=='a')online.db.ref('raceinfo/'+net.id).remove();}catch(e){}}
+async function startKart(cid,net){busy=true;for(let i=0;i<=10;i++){fade=i/10;await sleep(18);}
+  raceInit(cid,net);mode='race';if(net)raceNetStart(net);const done=new Promise(res=>{R.done=res});for(let i=10;i>=0;i--){fade=i/10;await sleep(18);}
+  await done;if(net)raceNetStop(net);for(let i=0;i<=10;i++){fade=i/10;await sleep(18);}R=null;mode='world';mapToast(MAPS[map].name);for(let i=10;i>=0;i--){fade=i/10;await sleep(18);}busy=false;save();}
 
 
 // ================= オンライン（ほかの プレイヤーに であえる・スタンプだけ） =================
@@ -1143,11 +1152,15 @@ async function netStart(){
   try{
     if(!online.inited){const B='https://www.gstatic.com/firebasejs/10.12.2/firebase-';
       await loadScript(B+'app-compat.js');await Promise.all([loadScript(B+'auth-compat.js'),loadScript(B+'database-compat.js')]);
-      firebase.initializeApp(FIREBASE_CONFIG);online.inited=true;setInterval(netTick,350);
+      firebase.initializeApp(FIREBASE_CONFIG);online.inited=true;
       addEventListener('pagehide',()=>{try{if(online.ref)online.db.ref('players/'+online.map+'/'+online.uid).remove();}catch(e){}});}
-    const cred=await firebase.auth().signInAnonymously();online.uid=cred.user.uid;online.db=firebase.database();online.on=true;
+    const cred=await firebase.auth().signInAnonymously();online.uid=cred.user.uid;online.db=firebase.database();netReady();
   }catch(e){online.on=false;}
   online.starting=false;}
+function netReady(){online.on=true;
+  try{online.db.ref('.info/serverTimeOffset').on('value',sn=>{online.offset=sn.val()||0;});
+    online.db.ref('invites/'+online.uid).on('value',snap=>{const v=snap.val();if(!v)online.invite=null;else if(!online.invite||online.invite.t!==v.t)online.invite=Object.assign({},v,{seen:performance.now()});});}catch(e){}
+  if(!online.ticking){online.ticking=true;setInterval(netTick,350);}}
 function netJoin(m){
   if(!online.on)return;
   if(online.ref){try{online.ref.off();online.db.ref('players/'+online.map+'/'+online.uid).remove();}catch(e){}}
@@ -1194,6 +1207,106 @@ function bubble(x,y,st){ctx.font=`bold 17px ${FONT}`;const w=ctx.measureText(st.
   rr(x-w/2,y-h+rise,w,h,15,'#fff',st.c,3);ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x-6,y+rise-1);ctx.lineTo(x+6,y+rise-1);ctx.lineTo(x,y+9+rise);ctx.closePath();ctx.fill();ctx.strokeStyle=st.c;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x-6,y+rise);ctx.lineTo(x,y+9+rise);ctx.lineTo(x+6,y+rise);ctx.stroke();
   T(st.t,x,y-h/2+rise,17,st.c);}
 
+
+// ================= ともだち対戦・いっしょのカートレース =================
+function rid(){return Math.random().toString(36).slice(2,10);}
+function serverNow(){return Date.now()+(online.offset||0);}
+function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function playerAtTile(x,y){const now=performance.now();for(const id in online.others){const e=online.others[id];if(now-e.seen<30000&&Math.round(e.x)===x&&Math.round(e.y)===y){e.uid=id;return e;}}return null;}
+async function friendMenu(pl){
+  const nm_=pl.n||'ともだち';
+  if(!flags.starter||!party.length){await say('まずは はかせから なかまを\nもらってきてね！');return;}
+  await say(`【${nm_}】\nあそびに さそってみよう！`);
+  const c=await choose(['ともだち対戦','いっしょに カートレース'],{title:nm_+' を さそう',colors:['#ff7a9a','#3fa9ff'],cancel:-1,cancelLabel:'やめる'});
+  if(c<0||c===undefined)return;
+  if(c==0)await sendBattleInvite(pl);
+  else{const k=await choose(KORDER.map(q=>KC[q].st+'  '+KC[q].name),{title:'どの コースで はしる？',colors:['#3fa9ff','#ff8fbd','#18b6c8','#e0802a','#5b3a9a','#6a8fd8','#e060b0','#3a2f8a'],cancel:-1,cancelLabel:'やめる'});
+    if(k>=0)await sendRaceInvite(pl,KORDER[k]);}
+}
+async function waitAcc(path,text){
+  online.waiting=true;online.cancel=false;box={text,shown:99,done:true,auto:true};let res=null;const t0=Date.now();
+  while(Date.now()-t0<30000&&!online.cancel){try{const v=(await online.db.ref(path).get()).val();if(!v){res=null;break;}if(v.acc===1||v.acc===0){res=v.acc;break;}}catch(e){break;}await sleep(600);}
+  online.waiting=false;box=null;return res;}
+async function sendBattleInvite(pl){
+  const id=rid(),seed=Math.floor(Math.random()*1e9),at=party.slice(0,3).map(m=>({i:m.id,l:20}));
+  try{await online.db.ref('duels/'+id).set({a:online.uid,b:pl.uid,an:myNick(),bn:String(pl.n||'').slice(0,24),seed,at});
+    await online.db.ref('invites/'+pl.uid).set({from:online.uid,fn:myNick(),k:'b',id,t:Date.now()});}
+  catch(e){await say('つながらなかったよ…\nまた あとで ためしてね。');return;}
+  const r=await waitAcc('duels/'+id,`${pl.n||'ともだち'}の へんじを まっているよ…\n（メニューボタンで やめる）`);
+  if(r!==1){try{await online.db.ref('duels/'+id).remove();await online.db.ref('invites/'+pl.uid).remove();}catch(e){}
+    await say(r===0?`${pl.n||'ともだち'}は いまは あそべないって。\nまた さそってね！`:'へんじが なかったよ。\nまた さそってね！');return;}
+  const d=(await online.db.ref('duels/'+id).get()).val();if(!d){await say('あれれ？ もう おわっていたみたい。');return;}
+  await friendBattle(Object.assign({id},d),'a');}
+async function sendRaceInvite(pl,cid){
+  const id=rid();
+  try{await online.db.ref('raceinfo/'+id).set({a:online.uid,b:pl.uid,c:cid});
+    await online.db.ref('invites/'+pl.uid).set({from:online.uid,fn:myNick(),k:'r',id,c:cid,t:Date.now()});}
+  catch(e){await say('つながらなかったよ…\nまた あとで ためしてね。');return;}
+  const r=await waitAcc('raceinfo/'+id,`${pl.n||'ともだち'}の へんじを まっているよ…\n（メニューボタンで やめる）`);
+  if(r!==1){try{await online.db.ref('raceinfo/'+id).remove();await online.db.ref('invites/'+pl.uid).remove();}catch(e){}
+    await say(r===0?`${pl.n||'ともだち'}は いまは あそべないって。\nまた さそってね！`:'へんじが なかったよ。\nまた さそってね！');return;}
+  const info=(await online.db.ref('raceinfo/'+id).get()).val();if(!info||!info.go){await say('あれれ？ もう おわっていたみたい。');return;}
+  await startKart(cid,{id,opp:pl.uid,name:pl.n||'ともだち',go:info.go,role:'a'});}
+async function handleInvite(){
+  const iv=online.invite;if(!iv)return;busy=true;online.invite=null;
+  const age=performance.now()-iv.seen;
+  try{await online.db.ref('invites/'+online.uid).remove();}catch(e){}
+  if(age>35000||iv.from===online.uid||(online.ignore&&online.ignore[iv.from]>Date.now())||!party.length||!flags.starter){busy=false;return;}
+  sThanks();const kind=iv.k=='b'?'ともだち対戦':'カートレース';
+  await say(`${iv.fn}が\n${kind}に さそってくれた！`);
+  const c=await choose(['うける！','ことわる'],{title:`${iv.fn}の ${kind}`,colors:['#2e9e6b','#8a8f8c'],cancel:1});
+  const path=(iv.k=='b'?'duels/':'raceinfo/')+iv.id;
+  try{const cur=(await online.db.ref(path).get()).val();
+    if(!cur){await say('あれれ？ もう おわっていたみたい。');busy=false;return;}
+    if(c!==0){await online.db.ref(path+'/acc').set(0);online.ignore=online.ignore||{};online.ignore[iv.from]=Date.now()+60000;busy=false;return;}
+    if(iv.k=='b'){await online.db.ref(path).update({acc:1,bt:party.slice(0,3).map(m=>({i:m.id,l:20}))});
+      const d=(await online.db.ref(path).get()).val();await friendBattle(Object.assign({id:iv.id},d),'b');}
+    else{const go=serverNow()+6000;await online.db.ref(path).update({acc:1,go});
+      await startKart(iv.c,{id:iv.id,opp:iv.from,name:iv.fn,go,role:'b'});}
+  }catch(e){await say('つながらなかったよ…');}
+  busy=false;}
+async function waitMove(id,turn,oppUid,ms=60000){const t0=Date.now();
+  while(Date.now()-t0<ms){try{const [m,e]=await Promise.all([online.db.ref('duelmoves/'+id+'/'+oppUid).get(),online.db.ref('duels/'+id+'/e').get()]);
+    const mv=m.val(),en=e.val();if(en)return{end:en};if(mv&&mv.t===turn)return{v:mv.v};}catch(err){return{end:'to'};}await sleep(450);}
+  return{end:'to'};}
+async function friendBattle(d,side){
+  const uid=online.uid,oppUid=side=='a'?d.b:d.a,oppName=(side=='a'?d.bn:d.an)||'ともだち';
+  const toTeam=t=>{const a=[];for(const k in (t||{}))a.push(t[k]);return a;};
+  const mine=toTeam(side=='a'?d.at:d.bt).map(o=>mkMon(o.i,20)),foes=toTeam(side=='a'?d.bt:d.at).map(o=>mkMon(o.i,20));
+  if(!mine.length||!foes.length){await say('チームが よみこめなかったよ…');return;}
+  mode='battle';B=newB();B.theme='sakura';B.friend=true;let mi=0,fi=0;B.p=mine[0];B.e=foes[0];B.pHP=B.p.hp;B.eHP=B.e.hp;
+  for(let i=0;i<=10;i++){fade=1-i/10;await sleep(20);}
+  await say(`${oppName}との ともだち対戦！\nどちらが ユーモアと あいが つよいかな？\n（みんな レベル20で たたかうよ）`);
+  await say(`ゆけっ！ ${SP[B.p.id].n}！`);
+  let result='',turn=0;
+  while(!result){
+    const mvs=SP[B.p.id].m;
+    const k=await choose(mvs,{cols:2,cancel:-1,cancelLabel:'こうさん',colors:mvs.map(n=>TCOL[MOVES[n][0]]),sub:`${SP[B.p.id].n}は どんな アピール？`,moveInfo:mvs.map(n=>`${TYPES[MOVES[n][0]]} ・ いりょく${MOVES[n][1]}`)});
+    if(k<0||k===undefined){result='lose';try{await online.db.ref('duels/'+d.id+'/e').set('q');}catch(e){}break;}
+    try{await online.db.ref('duelmoves/'+d.id+'/'+uid).set({t:turn,v:k});}catch(e){result='err';break;}
+    box={text:'あいての えらびを まっているよ…',shown:99,done:true,auto:true};
+    const r=await waitMove(d.id,turn,oppUid);box=null;
+    if(r.end){result=r.end=='q'?'win':r.end=='to'?'timeout':'win';break;}
+    const rng=mulberry((d.seed*7919+turn*101+1)>>>0);
+    const pM=B.p,eM=B.e,meMv=SP[pM.id].m[k],foeMv=SP[eM.id].m[r.v%4];
+    const meFirst=pM.spd>eM.spd||(pM.spd===eM.spd&&side=='a');
+    const acts=meFirst?[[true,meMv],[false,foeMv]]:[[false,foeMv],[true,meMv]];
+    for(const [isMe,mv] of acts){
+      const att=isMe?pM:eM,def=isMe?eM:pM;if(att.hp<=0||def.hp<=0)continue;
+      await playMove(att,def,mv,isMe,rng);
+      if(def.hp<=0){await faintSeq(def,!isMe);
+        if(isMe){fi++;if(fi>=foes.length){result='win';break;}B.e=foes[fi];B.eHP=B.e.hp;B.eGone=false;await say(`あいては ${SP[B.e.id].n}を\nくりだした！`);}
+        else{mi++;if(mi>=mine.length){result='lose';break;}B.p=mine[mi];B.pHP=B.p.hp;B.pGone=false;await say(`ゆけっ！ ${SP[B.p.id].n}！`);}}
+    }
+    turn++;
+  }
+  if(result=='win'){thanks+=3;flags.duelWins=(flags.duelWins||0)+1;sLevel();await say(`${oppName}との ともだち対戦は\nきみの かち！ ありがとうを 3こ ゲット！`);await say('ふたりとも えがおで ハグ！\nまた あそぼうね。');}
+  else if(result=='lose'){thanks+=1;await say(`${oppName}の かち！\nいい しょうぶだったよ。\nありがとうを 1こ もらった！`);await say('ふたりとも えがおで ハグ！\nまた あそぼうね。');}
+  else if(result=='timeout'){await say('あいてと つながらなくなったよ…\nまた さそってみてね。');}
+  else{await say('つながらなかったよ…');}
+  if(side=='a'){try{await online.db.ref('duels/'+d.id).remove();await online.db.ref('duelmoves/'+d.id).remove();}catch(e){}}
+  save();await endBattle();}
+
 // ================= title =================
 let titleBtns=[],titleMsg='',titleMsgT=0;
 function titleGo(){startNew();}
@@ -1230,6 +1343,7 @@ function loop(now){
   for(const p of popups){p.life-=dt;p.y+=p.vy*dt;}popups=popups.filter(p=>p.life>0);
   updateParts(dt);
   if(ctlWanted()!==ctlState)layout();
+  if(online.invite&&mode=='world'&&!busy&&!choice&&!box)handleInvite();
   if(AC&&musBus){const wt=wantTrack();if(wt!==mus.name)musicSet(wt);}
   if(mode=='title')drawTitle();
   else if(mode=='world'){drawWorld();}
@@ -1243,7 +1357,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 layout();requestAnimationFrame(loop);
-window.__w={get mode(){return mode},set mode(v){mode=v},get party(){return party},get map(){return map},get thanks(){return thanks},get busy(){return busy},get choice(){return choice},get box(){return box},pressA,pressB,startNew,NPCS,get pos(){return[px,py]},set pos(v){px=v[0];py=v[1]},set map(v){map=v},tryMove,startKart,netApply,online,openStamp,get R(){return R},keys,get music(){return mus.name},makeCode,applyCode,wildBattle,choiceDone,get flags(){return flags},mkMon,get B(){return B},set thanks(v){thanks=v},MAPS,load,save,continueGame};
+window.__w={get mode(){return mode},set mode(v){mode=v},set dir(v){pdir=v},get party(){return party},get map(){return map},get thanks(){return thanks},get busy(){return busy},get choice(){return choice},get box(){return box},pressA,pressB,startNew,NPCS,get pos(){return[px,py]},set pos(v){px=v[0];py=v[1]},set map(v){map=v},tryMove,startKart,netReady,netTick,handleInvite,friendBattle,sendBattleInvite,sendRaceInvite,friendMenu,netApply,online,openStamp,get R(){return R},keys,get music(){return mus.name},makeCode,applyCode,wildBattle,choiceDone,get flags(){return flags},mkMon,get B(){return B},set thanks(v){thanks=v},MAPS,load,save,continueGame};
 })();
 </script>
 </body>
