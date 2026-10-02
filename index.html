@@ -47,6 +47,65 @@ const sThanks=()=>{beep(880,.1,'sine',.1);beep(1320,.18,'sine',.1,.08)};
 const sLevel=()=>[523,659,784,1047].forEach((f,i)=>beep(f,.14,'triangle',.1,i*.1));
 const sStep=()=>beep(180,.03,'square',.015);
 
+
+// ================= BGM（やさしいピアノ・オリジナル曲を自動演奏） =================
+let musicOn=true;try{musicOn=localStorage.getItem('awMusic')!=='off';}catch(e){}
+let musBus=null,mus={name:null,timer:null,next:0,step:0,idx:6,lastTrack:null};
+const MAJ=[0,2,4,5,7,9,11],MIN=[0,2,3,5,7,8,10];
+function scaleOf(tonic,mode){const pc=tonic%12,a=[];for(let p=69;p<=93;p++){if(mode.includes(((p-pc)%12+12)%12))a.push(p);}return a;}
+const MCH=(root,minor)=>({b:Math.max(36,root-24),c:[root,root+(minor?3:4),root+7,root+12],pc:[root%12,(root+(minor?3:4))%12,(root+7)%12]});
+const TRACKS={
+ title:{bpm:60,pat:'arp',bars:1,prog:[MCH(60,0),MCH(57,1),MCH(53,0),MCH(55,0)],scale:scaleOf(60,MAJ)},
+ village:{bpm:72,pat:'arp',bars:1,prog:[MCH(62,0),MCH(59,1),MCH(55,0),MCH(57,0)],scale:scaleOf(62,MAJ)},
+ route:{bpm:96,pat:'bounce',bars:1,prog:[MCH(67,0),MCH(64,1),MCH(60,0),MCH(62,0)],scale:scaleOf(67,MAJ)},
+ plaza:{bpm:76,pat:'waltz',bars:1,prog:[MCH(63,0),MCH(60,1),MCH(56,0),MCH(58,0)],scale:scaleOf(63,MAJ)},
+ sato:{bpm:104,pat:'bounce',bars:1,prog:[MCH(65,0),MCH(62,1),MCH(58,0),MCH(60,0)],scale:scaleOf(65,MAJ)},
+ battle:{bpm:124,pat:'bounce',bars:1,prog:[MCH(57,1),MCH(53,0),MCH(60,0),MCH(55,0)],scale:scaleOf(57,MIN)},
+ boss:{bpm:134,pat:'bounce',bars:1,prog:[MCH(62,1),MCH(58,0),MCH(53,0),MCH(60,0),MCH(55,1),MCH(58,0),MCH(57,0),MCH(57,0)],scale:scaleOf(62,MIN)},
+ ending:{bpm:62,pat:'arp',bars:1,prog:[MCH(60,0),MCH(55,0),MCH(57,1),MCH(53,0),MCH(62,1),MCH(55,0),MCH(60,0),MCH(55,0)],scale:scaleOf(60,MAJ)}
+};
+function initMusic(){if(musBus||!AC)return;
+  musBus=AC.createGain();musBus.gain.value=musicOn?.5:0;
+  const dry=AC.createGain();dry.gain.value=.045;const wet=AC.createGain();wet.gain.value=.05;
+  const conv=AC.createConvolver();const len=AC.sampleRate*2.2,buf=AC.createBuffer(2,len,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6);}
+  conv.buffer=buf;musBus.connect(dry);dry.connect(AC.destination);musBus.connect(conv);conv.connect(wet);wet.connect(AC.destination);}
+function pnote(m,t,dur,vel){const f=440*Math.pow(2,(m-69)/12);const g=AC.createGain();
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.01);g.gain.exponentialRampToValueAtTime(.0008,t+dur);
+  [[1,'triangle',1],[2,'sine',.3],[3,'sine',.1],[.5,'sine',.25]].forEach(([k,type,a])=>{const o=AC.createOscillator(),og=AC.createGain();o.type=type;o.frequency.value=f*k;og.gain.value=a;o.connect(og);og.connect(g);o.start(t);o.stop(t+dur+.1);});
+  g.connect(musBus);}
+function musicPlayStep(tr,step){
+  const spb=60/tr.bpm/2,t=mus.next,per=tr.pat=='waltz'?6:8,bar=Math.floor(step/per),s=step%per;
+  const ch=tr.prog[Math.floor(bar/tr.bars)%tr.prog.length];
+  if(tr.pat=='arp'){
+    if(s==0)pnote(ch.b,t,spb*7,.5);
+    const order=[0,1,2,3,2,1,2,1];pnote(ch.c[order[s]],t,spb*3.2,.2);
+  }else if(tr.pat=='waltz'){
+    if(s==0)pnote(ch.b,t,spb*5,.5);
+    if(s==2||s==4){pnote(ch.c[0],t,spb*2,.17);pnote(ch.c[1],t,spb*2,.15);pnote(ch.c[2],t,spb*2,.15);}
+  }else{
+    if(s==0||s==4)pnote(ch.b,t,spb*3,.45);
+    if(s==2||s==6)pnote(ch.c[(s/2)%3+1>3?3:(s/2)%3+1],t,spb*1.4,.2);
+    if(s==3||s==7)pnote(ch.c[3],t,spb*1.2,.12);
+  }
+  // melody (random walk, leans on chord tones)
+  const sc=tr.scale,prob=s==0?1:(s==4||(tr.pat=='waltz'&&s==3))?.7:(s==2||s==6)?.3:0;
+  if(Math.random()<prob){
+    const mv=[-2,-1,-1,0,1,1,2];mus.idx=clamp(mus.idx+mv[Math.floor(Math.random()*mv.length)],0,sc.length-1);
+    if(Math.random()<.45){let best=mus.idx,bd=9;for(let k=-2;k<=2;k++){const j=mus.idx+k;if(j>=0&&j<sc.length&&ch.pc.includes(sc[j]%12)&&Math.abs(k)<bd){bd=Math.abs(k);best=j;}}mus.idx=best;}
+    pnote(sc[mus.idx],t,spb*(s==0?4.5:3),s==0?.42:.34);
+  }
+}
+function musicTick(){if(!AC||AC.state!=='running'||!mus.name)return;const tr=TRACKS[mus.name];if(!tr)return;
+  const spb=60/tr.bpm/2;if(mus.next<AC.currentTime-.5)mus.next=AC.currentTime+.05;
+  while(mus.next<AC.currentTime+.5){musicPlayStep(tr,mus.step);mus.next+=spb;mus.step++;}}
+function musicSet(name){if(mus.name===name)return;mus.name=name;mus.step=0;mus.idx=Math.floor((TRACKS[name].scale.length)/2);if(AC)mus.next=AC.currentTime+.15;
+  if(!mus.timer)mus.timer=setInterval(musicTick,120);}
+function wantTrack(){if(mode=='title')return 'title';if(mode=='ending')return 'ending';
+  if(mode=='battle')return (B&&B.boss)?'boss':'battle';return ({V:'village',R:'route',P:'plaza',M:'sato'})[map]||'village';}
+function musicToggle(){musicOn=!musicOn;try{localStorage.setItem('awMusic',musicOn?'on':'off');}catch(e){}if(musBus)musBus.gain.value=musicOn?.5:0;}
+document.addEventListener('visibilitychange',()=>{if(!AC)return;if(document.hidden)AC.suspend();else AC.resume();});
+
 // ================= data =================
 const TYPES=['わらい','あい','かんしゃ'],TCOL=['#ffb02e','#ff5e8a','#4aa3e8'];
 const REACT=['おなかを かかえて わらいころげた','きゅんと して まっかに なった','じーんと して なみだぐんだ'];
@@ -264,7 +323,7 @@ function pressA(){beepInit();if(choice){choiceDone(choice.sel);return;}
   if(mode=='world'&&!busy)interact();
   else if(mode=='title')titleGo();}
 function pressB(){beepInit();if(choice&&choice.cancel!==undefined){choiceDone(choice.cancel);return;}if(mode=='world'&&!busy)openMenu();}
-function beepInit(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state=='suspended')AC.resume();}catch(e){}}
+function beepInit(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state=='suspended')AC.resume();initMusic();}catch(e){}}
 cv.addEventListener('pointerdown',e=>{beepInit();const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   if(choice){for(let i=0;i<choice.rects.length;i++){const q=choice.rects[i];if(x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h){choice.sel=i;choiceDone(i);return;}}
     if(choice.cancelRect){const q=choice.cancelRect;if(x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h){choiceDone(choice.cancel);return;}}return;}
@@ -539,7 +598,7 @@ function showCodeUI(kind){return new Promise(res=>{
 async function openMenu(){
   if(busy)return;busy=true;
   while(true){
-    const i=await choose(['なかま','おにぎり ×'+onigiri,'ありがとうノート','セーブ','ひきつぎコード','とじる'],{title:'メニュー',cancel:5});
+    const i=await choose(['なかま','おにぎり ×'+onigiri,'ありがとうノート','セーブ','ひきつぎコード','おんがく：'+(musicOn?'ON':'OFF'),'とじる'],{title:'メニュー',cancel:6});
     if(i==0)await partyScreen(false);
     else if(i==1){if(onigiri<=0){await say('おにぎりが ない！');continue;}
       const hurt=party.map((m,k)=>k).filter(k=>party[k].hp<party[k].max);
@@ -548,6 +607,7 @@ async function openMenu(){
       if(k>=0){const m=party[hurt[k]];m.hp=Math.min(m.max,m.hp+30);onigiri--;sLove();await say(`${SP[m.id].n}は おにぎりを もぐもぐ！\nげんきが わいてきた！`);}}
     else if(i==2){await say(`ありがとうの かず：${thanks}こ\nなかまの かず：${party.length}ひき\nたおした トレーナー：${NPCS.filter(n=>n.defeated&&!n.member).length}にん\nなかまの さと：${NPCS.filter(n=>n.defeated&&n.member).length}/${MEMBERS.length}にん`);await say('【ヒント】\nわらい＞あい＞かんしゃ＞わらい の じゃんけんだよ。\nくさむらで あたらしい なかまに あえるよ！\nひろばの えがおマスターを めざそう。\nひがしの「なかまの さと」には ユニークな\nなかまが まってるよ！');}
     else if(i==3){save();sLove();await say('「ありがとう」の きろくを のこしたよ！');}
+    else if(i==5){musicToggle();sTap();}
     else if(i==4){const c=await choose(['コードを つくる','コードを いれる'],{title:'ひきつぎコード',cancel:-1,cancelLabel:'もどる'});if(c==0)await showCodeUI('show');else if(c==1){if(await showCodeUI('input')){sLove();busy=false;return;}}}
     else break;
   }
@@ -642,7 +702,7 @@ async function gainExp(foe,mon){
 }
 async function runBattle(opts){
   // opts: {wild:bool, team:[[id,lv]], trainer:npc}
-  mode='battle';B=newB();B.night=false;
+  mode='battle';B=newB();B.night=false;B.boss=!!(opts.trainer&&opts.trainer.boss);
   const foes=opts.team.map(([id,lv])=>mkMon(id,lv));let fi=0;B.e=foes[0];B.eHP=B.e.hp;
   let pi=party.findIndex(m=>m.hp>0);B.p=party[pi];B.pHP=B.p.hp;
   for(let i=0;i<=10;i++){fade=1-i/10;await sleep(20);}
@@ -841,6 +901,7 @@ function loop(now){
   }
   for(const p of popups){p.life-=dt;p.y+=p.vy*dt;}popups=popups.filter(p=>p.life>0);
   updateParts(dt);
+  if(AC&&musBus){const wt=wantTrack();if(wt!==mus.name)musicSet(wt);}
   if(mode=='title')drawTitle();
   else if(mode=='world'){drawWorld();}
   else if(mode=='battle'){drawBattle();}
@@ -852,7 +913,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 layout();requestAnimationFrame(loop);
-window.__w={get mode(){return mode},set mode(v){mode=v},get party(){return party},get map(){return map},get thanks(){return thanks},get busy(){return busy},get choice(){return choice},get box(){return box},pressA,pressB,startNew,NPCS,get pos(){return[px,py]},set pos(v){px=v[0];py=v[1]},set map(v){map=v},tryMove,makeCode,applyCode,wildBattle,choiceDone,flags,mkMon,get B(){return B},set thanks(v){thanks=v},MAPS,load,save,continueGame};
+window.__w={get mode(){return mode},set mode(v){mode=v},get party(){return party},get map(){return map},get thanks(){return thanks},get busy(){return busy},get choice(){return choice},get box(){return box},pressA,pressB,startNew,NPCS,get pos(){return[px,py]},set pos(v){px=v[0];py=v[1]},set map(v){map=v},tryMove,get music(){return mus.name},makeCode,applyCode,wildBattle,choiceDone,flags,mkMon,get B(){return B},set thanks(v){thanks=v},MAPS,load,save,continueGame};
 })();
 </script>
 </body>
