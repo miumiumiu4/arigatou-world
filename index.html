@@ -741,7 +741,7 @@ choose=function(opts,o={}){if(o.party)o.party=party;return _choose(opts,o);};
 function drawChoiceDispatch(){if(!choice)return;if(mode=='battle'&&choice.party){const m=mode;mode='world-overlay';drawChoice();mode=m;}else drawChoice();}
 
 // ================= title =================
-let titleBtns=[];
+let titleBtns=[],titleMsg='',titleMsgT=0;
 function titleGo(){startNew();}
 function startNew(){NPCS.forEach(n=>{n.defeated=false;n.talked=false;});party=[];flags={};thanks=0;onigiri=3;map='V';px=8;py=12;pdir='up';
   mode='world';busy=true;(async()=>{await say('むかしむかし、あるところに\n「ありがとう」で いっぱいの せかいが ありました。');await say('そこでは だれもが わらいと あいで\nなかよくなれる ふしぎな ちからを\nもっていました。');await say('これは そんな ありがとうワールドで\nきみが ぼうけんする おはなし。');mapToast('ありがとうむら');busy=false;})();}
@@ -753,11 +753,12 @@ function drawTitle(){
   T('ありがとう',W/2,H*.13,Math.min(46,u/9),'#e04a7a');T('ワールド',W/2,H*.13+Math.min(54,u/8),Math.min(56,u/7.5),'#2e9e6b');
   TF('わらいと あいで なかよくなろう',W/2,H*.13+Math.min(54,u/8)*2+4,Math.min(16,u/26),'#6a5a3a','center',W-20);
   const s=Math.min(u*.3,150,H*.2);drawMon(0,W/2-s*.9,H*.62,s,gt,0);drawMon(1,W/2+s*.9,H*.62,s,gt+1,0,true);drawMon(2,W/2,H*.59,s*1.15,gt+2,0);
-  titleBtns=[];const nb=hasSave()?3:2;let by=Math.min(H*.66,H-nb*68-34);
+  titleBtns=[];const nb=3;let by=Math.min(H*.66,H-nb*68-34);
   const add=(l,fn,col)=>{const b={x:W/2-120,y:by,w:240,h:54,fn};titleBtns.push(b);rr(b.x,b.y+4,b.w,b.h,16,'rgba(0,0,0,.25)');rr(b.x,b.y,b.w,b.h,16,col,'#fff',3);T(l,W/2,b.y+27,20,'#fff');by+=68;};
-  if(hasSave())add('つづきから',continueGame,'#ff7a9a');
+  add('つづきから',()=>{if(hasSave())continueGame();else{titleMsg='まだ きろくが ないよ。「はじめる」か\nひきつぎコードで はじめてね';titleMsgT=4;}},hasSave()?'#ff7a9a':'#a9b3ad');
   add('ひきつぎコードを いれる',async()=>{const ok=await showCodeUI('input');if(ok)sLove();},'#6a8fd8');
   add(hasSave()?'はじめから':'はじめる',()=>{if(hasSave()&&!confirm('いままでの きろくが きえるけど いい？'))return;try{localStorage.removeItem('arigatouWorld1');}catch(e){}startNew();},'#2e9e6b');
+  if(titleMsgT>0){titleMsgT-=.016;rr(W/2-150,H*.5-10,300,64,14,'rgba(30,40,35,.85)');TL(titleMsg,W/2,H*.5+14,14,'#fff',22,'center','bold',280);}
   T('ありがとうグループ',W/2,H-16,12,'#8a7a5a','center','normal');
 }
 
