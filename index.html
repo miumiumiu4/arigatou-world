@@ -1120,7 +1120,15 @@ async function startKart(cid){busy=true;for(let i=0;i<=10;i++){fade=i/10;await s
 
 // ================= オンライン（ほかの プレイヤーに であえる・スタンプだけ） =================
 // ★ Firebase を作ったら、ここに設定をはりつける（null のあいだは オンライン機能は ぜんぶ オフ）
-const FIREBASE_CONFIG=null;
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyBsMOesiFz5gJb7jIUz8sTv7Fe6Inr4T2Q",
+  authDomain:"arigatou-world.firebaseapp.com",
+  databaseURL:"https://arigatou-world-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"arigatou-world",
+  storageBucket:"arigatou-world.firebasestorage.app",
+  messagingSenderId:"331083638885",
+  appId:"1:331083638885:web:405fb9811edd173c593e8c"
+};
 const STAMPS=[null,{t:'愛してるぜ',c:'#ff4f7b'},{t:'ありがとう',c:'#ffa81e'},{t:'笑笑笑',c:'#3a9be0'}];
 const ADJ=['ほかほか','にこにこ','ぽかぽか','きらきら','ふわふわ','わくわく','ほんわか','ごきげん','ぴかぴか','のんびり','すくすく','ひょうきん'];
 const NOUN=['たいよう','おにぎり','まくら','おだんご','ひまわり','そよかぜ','ほしぞら','くじら','たんぽぽ','おひさま','ことり','わたあめ'];
