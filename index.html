@@ -29,6 +29,7 @@ const cv=document.getElementById('c'),ctx=cv.getContext('2d'),ctl=document.getEl
 const FONT="'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic',Meiryo,sans-serif";
 const rnd=(a,b)=>a+Math.random()*(b-a),ri=(a,b)=>Math.floor(rnd(a,b+1)),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function seeded(s){return()=>{s=(s*16807)%2147483647;return(s-1)/2147483646}}
 let W,H,CH,dpr,ts=44,GW,gx;
 
 // ================= audio =================
@@ -119,12 +120,17 @@ const MAPS={};
  for(let y=1;y<29;y++){g[y][8]='=';g[y][9]='=';}
  MAPS.R={w:18,h:30,g,name:'わらいの みち',warps:[{x:8,y:0,to:'P',tx:8,ty:12},{x:9,y:0,to:'P',tx:9,ty:12},{x:8,y:29,to:'V',tx:8,ty:1},{x:9,y:29,to:'V',tx:9,ty:1}],enc:{ids:[0,1,2,6,10,7,14,15,16,22],lv:[3,6]}};
  // --- plaza
- g=mkMap(18,14);border(g,[[8,13],[9,13]]);
- rect(g,8,0,2,14,'=');rect(g,6,2,6,2,'=');rect(g,3,7,12,1,'=');
+ g=mkMap(18,14);border(g,[[8,13],[9,13],[17,7]]);
+ rect(g,8,0,2,14,'=');rect(g,6,2,6,2,'=');rect(g,3,7,15,1,'=');
  rect(g,1,9,5,3,',');rect(g,12,9,5,3,',');rect(g,1,2,4,4,',');rect(g,13,2,4,4,',');
  rect(g,7,9,4,2,'W');g[9][8]='=';g[9][9]='=';g[10][8]='=';g[10][9]='=';
  scatter(g,'f',20,31);scatter(g,'T',8,3);rect(g,8,4,2,1,'=');
- MAPS.P={w:18,h:14,g,name:'ありがとう ひろば',warps:[{x:8,y:13,to:'R',tx:8,ty:1},{x:9,y:13,to:'R',tx:9,ty:1}],enc:{ids:[3,4,5,7,8,9,11,17,18,19,20,21,23,24,25,26,27,28],lv:[6,9]}};
+ MAPS.P={w:18,h:14,g,name:'ありがとう ひろば',warps:[{x:8,y:13,to:'R',tx:8,ty:1},{x:9,y:13,to:'R',tx:9,ty:1},{x:17,y:7,to:'M',tx:9,ty:15}],enc:{ids:[3,4,5,7,8,9,11,17,18,19,20,21,23,24,25,26,27,28],lv:[6,9]}};
+
+ // --- なかまの さと
+ g=mkMap(19,17);border(g,[[9,16],[10,16]]);rect(g,1,1,17,15,'=');
+ rect(g,8,1,3,1,'W');g[1][1]='T';g[1][17]='T';g[15][1]='T';g[15][17]='T';g[1][4]='f';g[1][14]='f';
+ MAPS.M={w:19,h:17,g,name:'ありがとう なかまの さと',warps:[{x:9,y:16,to:'P',tx:16,ty:7},{x:10,y:16,to:'P',tx:16,ty:7}],enc:null};
 })();
 
 // ================= NPCs =================
@@ -157,6 +163,57 @@ let NPCS=[
  {id:'boss',map:'P',x:8,y:3,dir:'down',look:{hair:'#ffd23f',shirt:'#ff4f7b',skin:'#f6d2ae',hat:'#ffd23f',cape:true},name:'えがおマスター',trainer:true,boss:true,team:[[3,11],[20,11],[9,12],[29,13]],taunt:'ようこそ ありがとう ひろばへ！\nわたしは えがおマスター。\nきみの わらいと あいを みせてくれ！',win:'…すばらしい。\nきみの えがおは ほんものだ。',gain:10},
 ];
 
+
+// ---- ありがとうグループの なかま（あだ名キャラ）[あだ名, あいさつ, まけたとき, なかま, ぶかい]
+const MEMBERS=[
+['ありがとう総大将','ようこそ なかまの さとへ！\nありがとうの かずで わしに かてるかな？','みごと！ ありがとうは\nぜんぶ かえってくるぞ！',[12,13]],
+['ベース番長','ベースは ひびく！\nそうじも ひびく！','ひびいた…！ ありがとう！',[11,3]],
+['生活空間の ぬし','この くうかんの ぬしは わし。\nホコリは ゆるさん！','ぬしの ざを ゆずろう…\nありがとう！',[8,19]],
+['たすかる仙人','おこまりごとは ないかのう？\nたすかる、たすかる！','たすかった！ ありがとう！',[21,23]],
+['なにわのエース','なにわの エース 参上や！\nわろてもらうで～！','おおきに！ ありがとう！',[10,7]],
+['ずんだ職人','ずんだもち たべる？\nそうじの あとは ずんだや！','うまかった～！ ありがとう！',[1,17]],
+['ふたりで ファースト','ふたりで ファースト！\nなかよしパワー ぜんかい！','ふうふげんかも わらいに かわるね！',[4,12]],
+['らふぃあ教授','そうじも がくもんじゃ。\nさあ じゅぎょうを はじめよう！','まいった！\nきょうからは きみが せんせいだ！',[5,23]],
+['ももアート師','そうじは アート。\nももいろの きもちで ぬりかえる！','いいアートだ！ ありがとう！',[26,4]],
+['けんしん印の ハンコ師匠','ポンッと ありがとうの ハンコ！\nおしてあげよう！','ポンッ！ あなたに はなまる！',[18,11]],
+['だいぜん坊','だいぜんは ごちそうの もと！\nおなか いっぱい わらおう！','ごちそうさま！ ありがとう！',[9,21]],
+['住宅ドクター','おうちの ぐあいは どうですか～？\nしんさつ しましょうね。','けんこう そのもの！ ありがとう！',[14,8]],
+['スマイル村長','スマイルむらへ ようこそ！\nえがおは むらの たからじゃ！','むらいちばんの えがおじゃ！',[0,6]],
+['プラスアルファ夫婦','プラス アルファの おもてなし！\nふたりで おむかえ しますわ。','アルファ いじょうの えがおね！',[6,17]],
+['だんじりリフレ','ソイヤ ソイヤ！\nそうじも だんじりも ぜんそくりょく！','ええ だんじりやった！\nありがとう！',[18,3]],
+['ハピネス納豆夫婦','ねばり づよく しあわせに！\nまぜれば まぜるほど ふっくら！','しあわせの ねばりに まけた～！',[17,2]],
+['だいすき工房長','そうじが だいすき！\nこうぼうは いつも ぴかぴか！','だいすきが つたわった！',[15,28]],
+['モアナ・ひつまぶし','ひつまぶしは さんかい たのしむ！\nそうじも さんかい かんどう！','さんかいめで まけた…\nおいしい！',[9,27]],
+['そよ風シルフ','そよかぜと いっしょに ふわり。\nやさしい かぜを おくるよ。','かぜが えがおを はこんだね。',[19,22]],
+['なんくるちゅらとよ','なんくるないさ～！\nわらって たたかおう！','ちゅらさん！ ありがとう！',[28,25]],
+['ハーモニー指揮者','みんなの こころを ハモらせよう。\nタクトを ふるよ！','いい ハーモニー！ ありがとう！',[12,5]],
+['きらりん姫','きらきら きらり～ん！\nあなたも ひかってる！','まぶしい！ ありがとう～！',[20,4]],
+['ジーエム将軍','ジーエム しょうぐん ただいま さんじょう！\nこえは おおきく ありがとう！','ほまれ たかい いくさじゃ！',[3,11]],
+['アドバリーの お城番','おしろの そうじは ひろいぞ！\nいっしょに みがこう！','おしろも ぴかぴか！',[8,9]],
+['はかたの ラーメンハート','こころは あつあつ こってり！\nスープは のこさず ありがとう！','ごちそうさま！\nすっきり ありがとう！',[24,0]],
+['えあスマイルの おねえさん','えあこんの かぜで えがおに なあれ！\nそよそよ～♪','さいこうの えがお！',[16,6]],
+['しんイチロー','ホームランみたいな ぴかぴか そうじ！\nフルスイングで ありがとう！','かっとばされた！ ありがとう！',[11,10]],
+['スズカの サーキット隊長','ぶいーん！ ありがとう ぜんそくりょく！\nコーナーも ていねいに！','チェッカーフラッグ！\nありがとう！',[5,18]],
+['のとの ななおっち','のとの うみは ひろいぞ～！\nこころも ひろく ありがとう！','うみより ひろい えがお！',[26,15]],
+['はちおうじ王子','わが くにの たみに えがおを！\nおうじの おもてなし！','みごとな えがお！\nほうびを とらせる！',[4,20]],
+['そらとぶ おたすけ','そらから おたすけ みつけるよ！\nひゅーん！','おたすけ かんりょう！',[19,23]],
+['おたすけ係長','おこまりごとは ありませんか？\nなんでも おたすけ します！','おたすけ ありがとう！',[8,3]],
+['のぼりびと','きょうも いちだん のぼるぞ！\nありがとうの ちょうじょうへ！','ちょうじょうに たどりついた！',[18,11]],
+['めぐろの サメ博士','かみつきは しないよ。\nがぶっと ありがとう！','がぶっ！…じゃなくて ありがとう！',[26,5]],
+['あかばね べんりやん','あかばねの なんでも やだよ！\nべんりやんと よんでくれ！','べんりな ひとだ～！ ありがとう！',[11,2]],
+['フォレスト桃太郎','もりの なかまと おにたいじ…\nじゃなくて おそうじ たいじ！','おにも えがおに なった！',[21,10]],
+['さくら咲く さとう','さくらが さいたら ありがとう！\nはなびらが まうよ。','まんかいの えがお！',[12,16]],
+['かまいしの がんばりや','こつこつ がんばるのが とりえです。\nありがとうを つみかさねます！','こつこつ つみかさねた かちだ！',[9,27]],
+['きたきゅうしゅうの かちぐみ','きたきゅうしゅうの いきおい みせたる！\nたたかいも ぜんぶ えがおで！','まけても えがお！ ありがとう！',[3,29]],
+['キックス小僧','けってけって けっとばす！\nえがおを パスしよう！','ナイスパス！ ありがとう！',[11,1]],
+['おがわの ぼうけんしゃ','ぼうけんの たびは ありがとうの たび！\nしゅっぱつ！','いい ぼうけんだった！',[22,13]],
+['ベスト かまぼこ','ベストを つくして ぷりぷり おもてなし！\nかまぼこも どうぞ。','ぷりぷりの えがお！ ありがとう！',[9,20]],
+];
+(function(){const HAIR=['#3a2a1a','#7b4a2a','#d9a441','#222','#b86a2a','#999','#ff7aa8','#4a6fa5','#5a3a8a','#2a6a4a'],SHIRT=['#34c6a5','#ff9db4','#6fc3ff','#ffb86b','#b084cc','#8fd18a','#e86a6a','#ffd23f','#7a8fd8','#d98a4a','#5fb8a0','#e07ab0'],HAT=[null,'#ffffff','#e85a5a','#3a7bd5','#d9b25f','#8a5ad8','#2e9e6b'];
+ MEMBERS.forEach((m,i)=>{const lv=5+Math.floor(i/6)+(i%2);
+  NPCS.push({id:'m'+i,map:'M',x:2+2*(i%8),y:3+2*Math.floor(i/8),dir:'down',look:(()=>{const r=seeded(i*131+7);return{hair:HAIR[Math.floor(r()*HAIR.length)],shirt:SHIRT[Math.floor(r()*SHIRT.length)],skin:r()<.5?'#f6d2ae':'#e8b98a',hat:r()<.45?HAT[Math.floor(r()*HAT.length)]:null,braid:r()<.15,glasses:r()<.15,cape:i==0};})(),name:m[0],member:true,thanks:1,l:m[1],win:m[2],team:m[3].map((id,k)=>[id,lv+k]),gain:2});});
+ NPCS.push({id:'guideP',map:'P',x:15,y:8,dir:'right',look:{hair:'#ff9bb0',shirt:'#ffd23f',skin:'#f6d2ae',hat:null},name:'あんないがかり',thanks:1,lines:['ひがしの みちを いくと\n「ありがとう なかまの さと」が あるよ！','ユニークな あだ名の みんなが\nまってるから あいに いってみてね！']});
+})();
 for(const n of NPCS){const g=MAPS[n.map].g;if(SOLID.has(g[n.y][n.x]))g[n.y][n.x]='.';}
 // ================= state =================
 let mode='title',map='V',px=8,py=12,pdir='up',walk=0,moving=null,party=[],flags={},thanks=0,onigiri=3,fade=0,saveOK=true;
@@ -352,6 +409,8 @@ function drawWorld(){
   list.sort((a,b)=>a.y-b.y);list.forEach(o=>o.fn());
   // "!" marks & talk bubbles for undefeated trainers / hakase
   for(const n of npcs()){if((n.trainer&&!n.defeated)||(n.id=='hakase'&&!flags.starter)){const bob=Math.sin(gt*4)*3;heart(n.x*ts+ts/2-camX,n.y*ts-ts*.28-camY+bob,ts*.13,n.trainer?'#ffb02e':'#ff4f7b');}}
+  let near=null,nd=99;for(const n of npcs()){if(n.member){const d=Math.abs(n.x-px)+Math.abs(n.y-py);if(d<nd){nd=d;near=n;}}}
+  for(const n of (near&&nd<=3?[near]:[])){{ctx.font=`bold 13px ${FONT}`;const tw=Math.min(ctx.measureText(n.name).width+18,W-20),lx=clamp(n.x*ts+ts/2-camX,tw/2+6,W-tw/2-6),ly=n.y*ts-ts*.45-camY;rr(lx-tw/2,ly-13,tw,26,13,'rgba(30,40,35,.85)','#ffd0dc',2);TF(n.name,lx,ly,13,'#fff','center',tw-12);}}
   // map name
   if(toast&&toast.life>0){ctx.globalAlpha=Math.min(1,toast.life*2);rr(W/2-120,62,240,38,12,'rgba(30,40,35,.8)');TF(toast.t,W/2,82,17,'#fff','center',216);ctx.globalAlpha=1;}
   // menu button & counters
@@ -396,6 +455,13 @@ async function talk(n){
     if(!flags.starter)await say('おっと！ まずは はかせに\nあいさつを しておいで。');
     else{await say('みちを とおりたいのかい？\nむらの ひとに ありがとうを\n3にん つたえておいで。');await say(`いまは ありがとう ${thanks}こ。\nあと ${Math.max(0,3-thanks)}こ だよ！`);}
     return;}
+  if(n.member){
+    await say(`【${n.name}】\n${n.l}`);
+    if(n.defeated){await say(n.win);await giveThanks(n);return;}
+    const c=await choose(['しょうぶする！','あいさつだけ'],{title:n.name+'と しょうぶ？'});
+    await giveThanks(n);
+    if(c==0)await trainerBattle(n,true);
+    return;}
   if(n.boss)return bossTalk(n);
   if(n.trainer){if(n.defeated){await say(n.win);return;}await say(n.taunt);await trainerBattle(n,true);return;}
   for(const l of n.lines)await say(l);
@@ -425,7 +491,7 @@ async function bossTalk(n){
 
 
 // ================= ひきつぎコード =================
-const MAPIDS=['V','R','P'],DIRN=['up','down','left','right'];
+const MAPIDS=['V','R','P','M'],DIRN=['up','down','left','right'];
 function sum36(b){let c=0;for(const ch of b)c=(c*31+ch.charCodeAt(0))%46656;return c.toString(36).toUpperCase().padStart(3,'0');}
 function makeCode(){
   const d=[1,MAPIDS.indexOf(map),px,py,DIRN.indexOf(pdir),thanks,onigiri,flags.starter?1:0,flags.cleared?1:0,flags.guardMsg?1:0,party.map(m=>[m.id,m.lv,m.exp,m.hp]),NPCS.filter(n=>n.defeated).map(n=>n.id),NPCS.filter(n=>n.talked).map(n=>n.id)];
@@ -480,7 +546,7 @@ async function openMenu(){
       if(!hurt.length){await say('みんな げんきいっぱいだ！');continue;}
       const k=await choose(hurt.map(k=>`${SP[party[k].id].n}  ${party[k].hp}/${party[k].max}`),{title:'だれに あげる？',cancel:-1,cancelLabel:'やめる'});
       if(k>=0){const m=party[hurt[k]];m.hp=Math.min(m.max,m.hp+30);onigiri--;sLove();await say(`${SP[m.id].n}は おにぎりを もぐもぐ！\nげんきが わいてきた！`);}}
-    else if(i==2){await say(`ありがとうの かず：${thanks}こ\nなかまの かず：${party.length}ひき\nたおした トレーナー：${NPCS.filter(n=>n.defeated).length}にん`);await say('【ヒント】\nわらい＞あい＞かんしゃ＞わらい の じゃんけんだよ。\nくさむらで あたらしい なかまに あえるよ！\nひろばの えがおマスターを めざそう。');}
+    else if(i==2){await say(`ありがとうの かず：${thanks}こ\nなかまの かず：${party.length}ひき\nたおした トレーナー：${NPCS.filter(n=>n.defeated&&!n.member).length}にん\nなかまの さと：${NPCS.filter(n=>n.defeated&&n.member).length}/${MEMBERS.length}にん`);await say('【ヒント】\nわらい＞あい＞かんしゃ＞わらい の じゃんけんだよ。\nくさむらで あたらしい なかまに あえるよ！\nひろばの えがおマスターを めざそう。\nひがしの「なかまの さと」には ユニークな\nなかまが まってるよ！');}
     else if(i==3){save();sLove();await say('「ありがとう」の きろくを のこしたよ！');}
     else if(i==4){const c=await choose(['コードを つくる','コードを いれる'],{title:'ひきつぎコード',cancel:-1,cancelLabel:'もどる'});if(c==0)await showCodeUI('show');else if(c==1){if(await showCodeUI('input')){sLove();busy=false;return;}}}
     else break;
